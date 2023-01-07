@@ -1,0 +1,162 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user
+  labels:
+    app: user
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: user
+  template:
+    metadata:
+      name: user
+      labels:
+        name: user
+        app: user
+    spec:  
+      containers:
+        - name: user
+          image: user:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PG_HOSTS
+              value: pguserservice
+            - name: PG_PORT
+              value: "5001"
+            - name: KAFKA_HOSTS
+              value: kafka-service
+          resources:
+            limits:
+              cpu: 40m
+              memory: 256Mi
+            requests:
+              cpu: 5m
+              memory: 50Mi              
+          ports:
+            - containerPort: 3000
+            - containerPort: 3001
+
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: userservice
+  labels:
+    app: user
+spec:
+  type: NodePort
+  selector:
+    name: user
+    app: user
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30001
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: userservice-grpc
+  labels:
+    app: user
+spec:
+  selector:
+    name: user
+    app: user
+  ports:
+    - port: 3001
+      targetPort: 3001
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: user-pv
+  labels:
+    app: user
+spec:
+  capacity:
+    storage: 2Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  hostPath:
+    path: /host/pguser
+    type: Directory
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-pvc
+  labels:
+    app: user
+spec: 
+  storageClassName: local-storage
+  resources:
+    requests:
+      storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pguser
+  labels:
+    name: pguser
+    app: user
+spec: 
+  containers:
+  - name: pguser
+    imagePullPolicy: IfNotPresent
+    image: postgres
+    env:
+      - name: POSTGRES_USER
+        value: koala
+      - name: POSTGRES_PASSWORD
+        value: ko4la 
+      - name: POSTGRES_DB
+        value: koala
+    volumeMounts:
+      - mountPath: /var/lib/postgresql/data
+        name: db-mount 
+        mountPropagation: HostToContainer
+    resources:
+      limits:
+        memory: 512Mi
+        cpu: 100m
+      requests:
+        memory: 50Mi
+        cpu: 10m
+    ports:
+      - containerPort: 5432
+  volumes:
+  - name: db-mount
+    persistentVolumeClaim:
+      claimName: user-pvc 
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: pguserservice
+  labels:
+    app: user
+spec:
+  selector:
+    name: pguser
+  ports:
+    - port: 5001
+      targetPort: 5432
+
